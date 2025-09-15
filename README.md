@@ -98,14 +98,6 @@ D:\Games\Steam Games\游戏名称
 - 智能处理路径中的特殊字符和空格
 - 跨平台兼容（Windows、Linux、macOS）
 
-## 许可证
-
-本项目采用MIT许可证，详见LICENSE文件。
-
 ## 贡献
 
 欢迎提交Issue和Pull Request来改进这个工具喵~
-
----
-
-*Made with ❤️ by 猫娘助手 🐱*
