@@ -64,3 +64,7 @@ base_library.zip
 localpycs/
 warn-*.txt
 xref-*.html
+
+# 项目特定文件 - 不提交
+build_exe.py
+启动程序.bat
