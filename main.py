@@ -235,7 +235,7 @@ class PathConverterGUI(QMainWindow):
         
         example_text = (
             "输入：I:\\git\\nas目录转换工具\n"
-            "输出：/share/git/nas目录转换工具\n\n"
+            "输出：/share/git/nas目录转换工具\n"
             "输入：Z:\\Movies\\动漫\\进击的巨人\\Season 1\n"
             "输出：/share/Movies/动漫/进击的巨人/Season 1"
         )

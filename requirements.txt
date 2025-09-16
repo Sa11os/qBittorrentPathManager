@@ -1,2 +1,3 @@
-# NAS路径转换工具依赖包
+# NAS Path Converter Tool Dependencies
 pyperclip>=1.8.2
+PyQt5>=5.15.0
