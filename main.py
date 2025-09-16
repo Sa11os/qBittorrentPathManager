@@ -7,7 +7,7 @@ Windows路径转Linux NAS路径转换工具 - PyQt版本
 """
 
 # 版本信息
-VERSION = "2.0.0"
+VERSION = "2.0.1"
 
 import sys
 import re
