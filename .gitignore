@@ -49,6 +49,9 @@ dist/
 ehthumbs.db
 Thumbs.db
 
+# Configuration
+config.json
+
 # Logs
 *.log
 
