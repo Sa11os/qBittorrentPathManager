@@ -7,7 +7,7 @@ Windows路径转Linux NAS路径转换工具 - PyQt版本
 """
 
 # 版本信息
-VERSION = "2.0.1"
+VERSION = "2.1.0"
 
 import sys
 import re
@@ -16,7 +16,8 @@ import os
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QTextEdit, QPushButton, QGroupBox, QMessageBox,
-    QSplitter, QFrame, QToolButton, QScrollArea
+    QSplitter, QFrame, QToolButton, QScrollArea, QStackedWidget,
+    QSpinBox, QCheckBox
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QIcon, QFontMetrics
@@ -98,30 +99,46 @@ class CollapsibleGroupBox(QGroupBox):
 class PathConverterGUI(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(f"NAS路径转换工具 v{VERSION}")
+        
+        # 配置文件路径
+        self.config_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
+        
+        # 加载配置（必须在UI设置之前）
+        self.load_config()
         
         # 获取DPI缩放比例
         self.dpi_scale = self.get_dpi_scale()
         print(f"[调试] DPI缩放比例: {self.dpi_scale}")
         
-        # 设置窗口几何
-        target_width = self.scale_size(1198)
-        target_height = self.scale_size(1046)
-        self.setGeometry(100, 100, target_width, target_height)
-        print(f"[调试] 设置窗口几何: 位置(100, 100), 目标大小({self.scale_size(1198)} x {self.scale_size(1046)}), 实际设置({target_width} x {target_height})")
+        # 创建堆叠窗口部件来管理页面
+        self.stacked_widget = QStackedWidget()
+        self.setCentralWidget(self.stacked_widget)
+        
+        # 创建主页面
+        self.main_page = QWidget()
+        self.stacked_widget.addWidget(self.main_page)
+        
+        # 创建设置页面
+        self.settings_page = QWidget()
+        self.stacked_widget.addWidget(self.settings_page)
+        
+        # 设置主页面为当前页面
+        self.stacked_widget.setCurrentWidget(self.main_page)
+        
+        # 设置窗口属性
+        self.setWindowTitle(f"NAS路径转换工具 v{VERSION}")
+        self.setMinimumSize(900, 700)
+        
+        # 设置UI
+        self.setup_ui()
+        self.create_settings_page()
+        
+        # 应用保存的窗口状态
+        self.apply_saved_window_state()
         
         # 初始化状态变量
         self.help_expanded = False
         self.initial_size = None
-        
-        # 配置文件路径
-        self.config_file = "config.json"
-        
-        # 加载配置
-        self.load_config()
-        
-        # 设置UI
-        self.setup_ui()
     
     def apply_saved_window_state(self):
         """应用保存的窗口状态"""
@@ -145,16 +162,31 @@ class PathConverterGUI(QMainWindow):
             
             # 应用保存的窗口大小（在状态设置后）
             if hasattr(self, 'saved_window_width') and hasattr(self, 'saved_window_height'):
-                self.resize(self.saved_window_width, self.saved_window_height)
-                print(f"[调试] 应用保存的窗口大小: {self.saved_window_width}x{self.saved_window_height}")
+                # 使用保存的窗口大小
+                saved_width = self.saved_window_width
+                saved_height = self.saved_window_height
+                print(f"[调试] 应用保存的窗口大小: {saved_width}x{saved_height}")
+                
+                # 设置窗口位置和大小
+                self.setGeometry(100, 100, saved_width, saved_height)
                 
                 # 再次强制处理事件并检查最终大小
                 QApplication.processEvents()
                 final_size = self.size()
                 print(f"[调试] 最终窗口大小: {final_size.width()}x{final_size.height()}")
+            else:
+                # 如果没有保存的窗口大小，使用默认大小
+                default_width = self.scale_size(1198)
+                default_height = self.scale_size(1046)
+                print(f"[调试] 使用默认窗口大小: {default_width}x{default_height}")
+                self.setGeometry(100, 100, default_width, default_height)
                 
         except Exception as e:
             print(f"[调试] 应用保存的窗口状态时出错: {e}")
+            # 出错时使用默认大小
+            default_width = self.scale_size(1198)
+            default_height = self.scale_size(1046)
+            self.setGeometry(100, 100, default_width, default_height)
     
     def get_dpi_scale(self):
         """获取DPI缩放比例"""
@@ -168,8 +200,12 @@ class PathConverterGUI(QMainWindow):
         return 1.0
     
     def scale_font_size(self, base_size):
-        """根据DPI缩放字体大小"""
-        return int(base_size * self.dpi_scale * 0.6)  # 缩小25%
+        """根据DPI缩放和用户设置的字体大小"""
+        # 获取用户设置的字体大小，如果没有设置则使用默认值
+        user_font_size = getattr(self, 'saved_font_size', 9)
+        # 计算字体大小：用户设置的字体大小 + (基础大小 - 9) 的差值，然后应用DPI缩放
+        adjusted_size = user_font_size + (base_size - 9)
+        return int(adjusted_size * self.dpi_scale * 0.6)  # 缩小25%
     
     def scale_size(self, base_size):
         """根据DPI缩放尺寸"""
@@ -181,12 +217,8 @@ class PathConverterGUI(QMainWindow):
         
     def setup_ui(self):
         """设置用户界面"""
-        # 创建中央窗口部件
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        
         # 主布局 - 垂直布局包含标题和内容区域
-        main_layout = QVBoxLayout(central_widget)
+        main_layout = QVBoxLayout(self.main_page)
         main_layout.setSpacing(self.scale_size(15))
         main_layout.setContentsMargins(self.scale_size(20), self.scale_size(20), 
                                      self.scale_size(20), self.scale_size(20))
@@ -406,6 +438,30 @@ class PathConverterGUI(QMainWindow):
         self.copy_btn.clicked.connect(self.copy_result)
         button_layout.addWidget(self.copy_btn)
         
+        # 设置按钮
+        self.settings_btn = QPushButton("⚙️ 设置")
+        self.settings_btn.setFont(QFont("Arial", self.scale_font_size(10), QFont.Bold))
+        self.settings_btn.setMinimumHeight(self.scale_button_size(50))
+        self.settings_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #3498db;
+                color: white;
+                border: none;
+                padding: {self.scale_button_size(12)}px {self.scale_button_size(24)}px;
+                border-radius: {self.scale_size(8)}px;
+                font-weight: bold;
+                min-height: {self.scale_button_size(40)}px;
+            }}
+            QPushButton:hover {{
+                background-color: #2980b9;
+            }}
+            QPushButton:pressed {{
+                background-color: #21618c;
+            }}
+        """)
+        self.settings_btn.clicked.connect(self.show_settings)
+        button_layout.addWidget(self.settings_btn)
+        
         # 添加底部弹性空间，让按钮向上贴齐
         button_layout.addStretch()
         
@@ -576,7 +632,9 @@ class PathConverterGUI(QMainWindow):
             "nas_prefix": "/share",
             "window_width": 1249,
             "window_height": 1046,
-            "help_expanded": False
+            "help_expanded": False,
+            "font_size": 9,  # 默认字体大小
+            "auto_resize": False  # 是否自动调整界面大小
         }
         
         try:
@@ -588,23 +646,30 @@ class PathConverterGUI(QMainWindow):
                     self.saved_window_width = config.get('window_width', default_config['window_width'])
                     self.saved_window_height = config.get('window_height', default_config['window_height'])
                     self.saved_help_expanded = config.get('help_expanded', default_config['help_expanded'])
-                    print(f"[调试] 从配置文件读取: 窗口大小 {self.saved_window_width}x{self.saved_window_height}, 帮助信息展开: {self.saved_help_expanded}")
+                    # 读取设置页面配置
+                    self.saved_font_size = config.get('font_size', default_config['font_size'])
+                    self.saved_auto_resize = config.get('auto_resize', default_config['auto_resize'])
+                    print(f"[调试] 从配置文件读取: 窗口大小 {self.saved_window_width}x{self.saved_window_height}, 帮助信息展开: {self.saved_help_expanded}, 字体大小: {self.saved_font_size}, 自动调整: {self.saved_auto_resize}")
             else:
                 # 创建默认配置文件
                 self.nas_prefix = default_config['nas_prefix']
                 self.saved_window_width = default_config['window_width']
                 self.saved_window_height = default_config['window_height']
                 self.saved_help_expanded = default_config['help_expanded']
+                self.saved_font_size = default_config['font_size']
+                self.saved_auto_resize = default_config['auto_resize']
                 self.save_config(default_config)
-                print(f"[调试] 使用默认配置: 窗口大小 {self.saved_window_width}x{self.saved_window_height}, 帮助信息展开: {self.saved_help_expanded}")
+                print(f"[调试] 使用默认配置: 窗口大小 {self.saved_window_width}x{self.saved_window_height}, 帮助信息展开: {self.saved_help_expanded}, 字体大小: {self.saved_font_size}, 自动调整: {self.saved_auto_resize}")
         except Exception as e:
             # 如果配置文件损坏，使用默认配置并重新创建文件
             self.nas_prefix = default_config['nas_prefix']
             self.saved_window_width = default_config['window_width']
             self.saved_window_height = default_config['window_height']
             self.saved_help_expanded = default_config['help_expanded']
+            self.saved_font_size = default_config['font_size']
+            self.saved_auto_resize = default_config['auto_resize']
             self.save_config(default_config)
-            print(f"[调试] 配置文件损坏，使用默认配置: 窗口大小 {self.saved_window_width}x{self.saved_window_height}, 帮助信息展开: {self.saved_help_expanded}")
+            print(f"[调试] 配置文件损坏，使用默认配置: 窗口大小 {self.saved_window_width}x{self.saved_window_height}, 帮助信息展开: {self.saved_help_expanded}, 字体大小: {self.saved_font_size}, 自动调整: {self.saved_auto_resize}")
     
     def save_config(self, config=None):
         """保存配置文件"""
@@ -616,14 +681,348 @@ class PathConverterGUI(QMainWindow):
                     "nas_prefix": self.nas_prefix,
                     "window_width": current_size.width(),
                     "window_height": current_size.height(),
-                    "help_expanded": getattr(self, 'help_expanded', False)
+                    "help_expanded": getattr(self, 'help_expanded', False),
+                    "font_size": getattr(self, 'saved_font_size', 9),
+                    "auto_resize": getattr(self, 'saved_auto_resize', False)
                 }
-                print(f"[调试] 保存当前配置: 窗口大小 {config['window_width']}x{config['window_height']}, 帮助信息展开: {config['help_expanded']}")
+                print(f"[调试] 保存当前配置: 窗口大小 {config['window_width']}x{config['window_height']}, 帮助信息展开: {config['help_expanded']}, 字体大小: {config['font_size']}, 自动调整: {config['auto_resize']}")
             
             with open(self.config_file, 'w', encoding='utf-8') as f:
                 json.dump(config, f, ensure_ascii=False, indent=4)
         except Exception as e:
             QMessageBox.critical(self, "错误", f"保存配置文件失败：{str(e)}")
+    
+    def create_settings_page(self):
+        """创建设置页面"""
+        # 设置页面主布局
+        settings_layout = QVBoxLayout(self.settings_page)
+        settings_layout.setSpacing(self.scale_size(20))
+        settings_layout.setContentsMargins(self.scale_size(20), self.scale_size(20), 
+                                         self.scale_size(20), self.scale_size(20))
+        
+        # 标题
+        title_label = QLabel("⚙️ 设置")
+        title_label.setAlignment(Qt.AlignCenter)
+        title_label.setFont(QFont("Arial", self.scale_font_size(18), QFont.Bold))
+        title_label.setStyleSheet(f"""
+            QLabel {{
+                color: #2c3e50;
+                padding: {self.scale_size(15)}px;
+                background-color: #ecf0f1;
+                border: 2px solid #bdc3c7;
+                border-radius: {self.scale_size(10)}px;
+                margin-bottom: {self.scale_size(10)}px;
+            }}
+        """)
+        settings_layout.addWidget(title_label)
+        
+        # 设置内容区域
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setSpacing(self.scale_size(15))
+        
+        # 字体大小设置
+        font_group = QGroupBox("字体大小设置")
+        font_group.setFont(QFont("Arial", self.scale_font_size(12), QFont.Bold))
+        font_group.setStyleSheet(f"""
+            QGroupBox {{
+                font-weight: bold;
+                border: 2px solid #3498db;
+                border-radius: {self.scale_size(8)}px;
+                margin-top: {self.scale_size(10)}px;
+                padding-top: {self.scale_size(10)}px;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                left: {self.scale_size(10)}px;
+                padding: 0 {self.scale_size(5)}px 0 {self.scale_size(5)}px;
+                color: #2c3e50;
+            }}
+        """)
+        font_layout = QHBoxLayout(font_group)
+        
+        font_label = QLabel("字体大小:")
+        font_label.setFont(QFont("Arial", self.scale_font_size(11)))
+        font_layout.addWidget(font_label)
+        
+        self.font_size_spinbox = QSpinBox()
+        self.font_size_spinbox.setRange(8, 20)
+        self.font_size_spinbox.setValue(getattr(self, 'saved_font_size', 9))
+        self.font_size_spinbox.setSuffix(" pt")
+        self.font_size_spinbox.setFont(QFont("Arial", self.scale_font_size(11)))
+        self.font_size_spinbox.setStyleSheet(f"""
+            QSpinBox {{
+                border: 2px solid #bdc3c7;
+                border-radius: {self.scale_size(5)}px;
+                padding: {self.scale_size(5)}px;
+                background-color: white;
+                min-width: {self.scale_size(80)}px;
+            }}
+            QSpinBox:focus {{
+                border-color: #3498db;
+            }}
+        """)
+        self.font_size_spinbox.valueChanged.connect(self.on_font_size_changed)
+        font_layout.addWidget(self.font_size_spinbox)
+        
+        apply_font_btn = QPushButton("应用字体")
+        apply_font_btn.setFont(QFont("Arial", self.scale_font_size(10), QFont.Bold))
+        apply_font_btn.setMinimumHeight(self.scale_button_size(50))
+        apply_font_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #27ae60;
+                color: white;
+                border: none;
+                padding: {self.scale_button_size(12)}px {self.scale_button_size(24)}px;
+                border-radius: {self.scale_size(8)}px;
+                font-weight: bold;
+                min-height: {self.scale_button_size(40)}px;
+            }}
+            QPushButton:hover {{
+                background-color: #229954;
+            }}
+            QPushButton:pressed {{
+                background-color: #1e8449;
+            }}
+        """)
+        apply_font_btn.clicked.connect(self.apply_font_size)
+        font_layout.addWidget(apply_font_btn)
+        
+        font_layout.addStretch()
+        content_layout.addWidget(font_group)
+        
+        # 界面大小设置
+        size_group = QGroupBox("界面大小设置")
+        size_group.setFont(QFont("Arial", self.scale_font_size(12), QFont.Bold))
+        size_group.setStyleSheet(f"""
+            QGroupBox {{
+                font-weight: bold;
+                border: 2px solid #e67e22;
+                border-radius: {self.scale_size(8)}px;
+                margin-top: {self.scale_size(10)}px;
+                padding-top: {self.scale_size(10)}px;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                left: {self.scale_size(10)}px;
+                padding: 0 {self.scale_size(5)}px 0 {self.scale_size(5)}px;
+                color: #2c3e50;
+            }}
+        """)
+        size_layout = QVBoxLayout(size_group)
+        
+        # 自动调整界面大小选项
+        auto_resize_layout = QHBoxLayout()
+        self.auto_resize_checkbox = QCheckBox("自动调整界面大小")
+        self.auto_resize_checkbox.setChecked(getattr(self, 'saved_auto_resize', False))
+        self.auto_resize_checkbox.setFont(QFont("Arial", self.scale_font_size(11)))
+        self.auto_resize_checkbox.setStyleSheet(f"""
+            QCheckBox {{
+                spacing: {self.scale_size(8)}px;
+            }}
+            QCheckBox::indicator {{
+                width: {self.scale_size(18)}px;
+                height: {self.scale_size(18)}px;
+            }}
+            QCheckBox::indicator:unchecked {{
+                border: 2px solid #bdc3c7;
+                border-radius: {self.scale_size(3)}px;
+                background-color: white;
+            }}
+            QCheckBox::indicator:checked {{
+                border: 2px solid #e67e22;
+                border-radius: {self.scale_size(3)}px;
+                background-color: #e67e22;
+                image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIiIGhlaWdodD0iMTIiIHZpZXdCb3g9IjAgMCAxMiAxMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEwIDNMNC41IDguNUwyIDYiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+Cjwvc3ZnPgo=);
+            }}
+        """)
+        self.auto_resize_checkbox.stateChanged.connect(self.on_auto_resize_changed)
+        auto_resize_layout.addWidget(self.auto_resize_checkbox)
+        auto_resize_layout.addStretch()
+        size_layout.addLayout(auto_resize_layout)
+        
+        # 手动调整界面大小按钮
+        manual_resize_layout = QHBoxLayout()
+        resize_btn = QPushButton("🔧 调整界面大小")
+        resize_btn.setFont(QFont("Arial", self.scale_font_size(10), QFont.Bold))
+        resize_btn.setMinimumHeight(self.scale_button_size(50))
+        resize_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #f39c12;
+                color: white;
+                border: none;
+                padding: {self.scale_button_size(12)}px {self.scale_button_size(24)}px;
+                border-radius: {self.scale_size(8)}px;
+                font-weight: bold;
+                min-height: {self.scale_button_size(40)}px;
+            }}
+            QPushButton:hover {{
+                background-color: #e67e22;
+            }}
+            QPushButton:pressed {{
+                background-color: #d35400;
+            }}
+        """)
+        resize_btn.clicked.connect(self.adjust_window_size)
+        manual_resize_layout.addWidget(resize_btn)
+        manual_resize_layout.addStretch()
+        size_layout.addLayout(manual_resize_layout)
+        
+        content_layout.addWidget(size_group)
+        
+        # 添加弹性空间
+        content_layout.addStretch()
+        
+        settings_layout.addWidget(content_widget)
+        
+        # 返回按钮
+        back_btn = QPushButton("← 返回主页")
+        back_btn.setFont(QFont("Arial", self.scale_font_size(10), QFont.Bold))
+        back_btn.setMinimumHeight(self.scale_button_size(50))
+        back_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #e74c3c;
+                color: white;
+                border: none;
+                padding: {self.scale_button_size(12)}px {self.scale_button_size(24)}px;
+                border-radius: {self.scale_size(8)}px;
+                font-weight: bold;
+                min-height: {self.scale_button_size(40)}px;
+            }}
+            QPushButton:hover {{
+                background-color: #c0392b;
+            }}
+            QPushButton:pressed {{
+                background-color: #a93226;
+            }}
+        """)
+        back_btn.clicked.connect(self.show_main_page)
+        
+        # 按钮容器，居中显示
+        button_container = QWidget()
+        button_layout = QHBoxLayout(button_container)
+        button_layout.addStretch()
+        button_layout.addWidget(back_btn)
+        button_layout.addStretch()
+        
+        settings_layout.addWidget(button_container)
+    
+    def show_settings(self):
+        """显示设置页面"""
+        self.stacked_widget.setCurrentWidget(self.settings_page)
+    
+    def show_main_page(self):
+        """显示主页面"""
+        self.stacked_widget.setCurrentWidget(self.main_page)
+    
+    def on_font_size_changed(self, value):
+        """字体大小改变时的处理"""
+        self.saved_font_size = value
+    
+    def apply_font_size(self):
+        """应用字体大小设置"""
+        try:
+            # 更新所有文本控件的字体大小
+            new_font_size = self.font_size_spinbox.value()
+            self.saved_font_size = new_font_size
+            
+            # 保存设置到配置文件
+            self.save_config()
+            
+            # 立即应用字体大小到当前界面
+            self.update_all_fonts()
+            
+            QMessageBox.information(self, "设置已应用", 
+                                  f"字体大小已设置为 {new_font_size} pt 并立即生效喵~")
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"应用字体大小失败：{str(e)}")
+    
+    def update_all_fonts(self):
+        """更新所有控件的字体大小"""
+        try:
+            # 递归更新主页面的所有控件字体
+            self.update_widget_fonts(self.main_page)
+            # 递归更新设置页面的所有控件字体
+            self.update_widget_fonts(self.settings_page)
+            # 强制重绘界面
+            self.update()
+        except Exception as e:
+            print(f"[调试] 更新字体时出错: {e}")
+    
+    def update_widget_fonts(self, widget):
+        """递归更新控件及其子控件的字体"""
+        try:
+            # 更新当前控件的字体
+            if hasattr(widget, 'font'):
+                current_font = widget.font()
+                if current_font:
+                    # 根据控件类型设置合适的字体大小
+                    if isinstance(widget, QLabel):
+                        # 标签字体
+                        if "title" in widget.objectName().lower() or widget.font().pointSize() > 15:
+                            # 标题类标签使用较大字体
+                            new_size = self.scale_font_size(18)
+                        else:
+                            # 普通标签
+                            new_size = self.scale_font_size(12)
+                    elif isinstance(widget, QPushButton):
+                        # 按钮字体
+                        new_size = self.scale_font_size(11)
+                    elif isinstance(widget, (QSpinBox, QCheckBox)):
+                        # 输入控件字体
+                        new_size = self.scale_font_size(11)
+                    else:
+                        # 其他控件使用默认字体大小
+                        new_size = self.scale_font_size(12)
+                    
+                    current_font.setPointSize(max(8, new_size))  # 确保字体不会太小
+                    widget.setFont(current_font)
+            
+            # 递归处理子控件
+            for child in widget.findChildren(QWidget):
+                if child.parent() == widget:  # 只处理直接子控件，避免重复处理
+                    self.update_widget_fonts(child)
+                    
+        except Exception as e:
+            print(f"[调试] 更新控件字体时出错: {e}")
+    
+    def on_auto_resize_changed(self, state):
+        """自动调整界面大小选项改变时的处理"""
+        self.saved_auto_resize = state == 2  # Qt.Checked = 2
+        self.save_config()
+        
+        if self.saved_auto_resize:
+            # 如果启用自动调整，立即执行一次
+            self.adjust_window_size()
+    
+    def adjust_window_size(self):
+        """调整界面大小"""
+        try:
+            # 获取当前DPI缩放
+            dpi_scale = self.get_dpi_scale()
+            
+            # 根据DPI缩放计算合适的窗口大小
+            base_width = 1249
+            base_height = 1046
+            
+            # 如果帮助信息展开，增加高度
+            if getattr(self, 'help_expanded', False):
+                base_height += 200
+            
+            new_width = int(base_width * dpi_scale)
+            new_height = int(base_height * dpi_scale)
+            
+            # 应用新的窗口大小
+            self.resize(new_width, new_height)
+            
+            # 保存新的窗口大小
+            self.save_config()
+            
+            QMessageBox.information(self, "界面调整完成", 
+                                  f"界面大小已调整为 {new_width}x{new_height}\n"
+                                  f"DPI缩放比例: {dpi_scale:.2f} 喵~")
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"调整界面大小失败：{str(e)}")
 
 def main():
     """主函数"""
